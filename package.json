@@ -1,9 +1,27 @@
 {
-  "name": "y-price-backend",
+  "name": "y-price",
   "version": "1.0.0",
   "private": true,
-  "description": "Serverless backend pro Y-Price – Firecrawl + Gemini, bez npm závislostí.",
+  "description": "Y-Price — prémiový cenový srovnávač streetwearu, sneakerů, luxusních domů a sběratelství.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "^15.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "@upstash/redis": "^1.34.0"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.0",
+    "postcss": "^8.4.0",
+    "autoprefixer": "^10.4.0"
+  },
   "engines": {
     "node": ">=18"
   }
 }
+
