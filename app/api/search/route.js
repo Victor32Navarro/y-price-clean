@@ -11,6 +11,7 @@
 
 import { runProductSearch } from '@/lib/search';
 import { buildCacheKey, getCachedOffers, setCachedOffers } from '@/lib/cache';
+import { checkRateLimit } from '@/lib/rateLimit';
 
 // S Fluid Compute (zapnuté v Project Settings → Functions) jde tenhle
 // limit zvednout nad původních 60 s bez něj. 120 s dává dost prostoru
@@ -19,6 +20,16 @@ import { buildCacheKey, getCachedOffers, setCachedOffers } from '@/lib/cache';
 export const maxDuration = 120;
 
 async function handlePost(request) {
+  // Ochrana proti zahlcení/botům — musí být úplně první věc, dřív než
+  // cokoli jiného, ať se neplatí ani za práci navíc s odmítnutým požadavkem.
+  const rate = await checkRateLimit(request);
+  if (!rate.success) {
+    return Response.json(
+      { error: 'Příliš mnoho požadavků z tvé sítě. Zkus to prosím za chvíli znovu.' },
+      { status: 429 }
+    );
+  }
+
   let body;
   try {
     body = await request.json();
@@ -85,4 +96,5 @@ export function OPTIONS() {
     },
   });
 }
+
 
