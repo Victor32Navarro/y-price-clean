@@ -37,7 +37,9 @@ export default function HomePage() {
       }
 
       if (!res.ok) {
-        throw new Error(data?.error || `Server vrátil chybu (${res.status}).`);
+        const baseMessage = data?.error || `Server vrátil chybu (${res.status}).`;
+        const detail = data?.detail ? ` (${data.detail})` : '';
+        throw new Error(`${baseMessage}${detail}`);
       }
 
       setOffers(Array.isArray(data.offers) ? data.offers : []);
@@ -97,3 +99,4 @@ export default function HomePage() {
     </div>
   );
 }
+
