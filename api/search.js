@@ -56,6 +56,30 @@ const GEMINI_MODEL = 'gemini-flash-latest';
 const GEMINI_URL =
   `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
+// ---------------------------------------------------------------------------
+// ⚠️ ZÁLOŽNÍ KLÍČE NATVRDO V KÓDU — POUZE DOČASNÉ ŘEŠENÍ
+// ---------------------------------------------------------------------------
+// Bezpečná cesta je nastavit klíče jako Environment Variables na Vercelu
+// (přes CLI: `npx vercel env add GEMINI_API_KEY production`, funguje i bez
+// mobilního dashboardu). Kód níže je čte primárně odtud přes process.env.
+//
+// Pokud env proměnná chybí, použije se tahle záložní konstanta — takže
+// appka naběhne i bez Vercel dashboardu. Jakmile ale tenhle soubor pushneš
+// do gitu, klíč zůstane navždy v historii commitů, i kdybys ho later
+// smazal. NIKDY ho takhle nenechávej v repozitáři, který je nebo bude
+// veřejný nebo sdílený s kýmkoli — hned jak env proměnné na Vercelu
+// zprovozníš, hodnoty tady vrať zpátky na prázdný řetězec.
+const GEMINI_API_KEY_FALLBACK = ''; // <-- sem dočasně vlož svůj Gemini klíč
+const FIRECRAWL_API_KEY_FALLBACK = ''; // <-- sem dočasně vlož svůj Firecrawl klíč
+
+function resolveApiKey(envValue, fallbackValue) {
+  const trimmedEnv = (envValue || '').trim();
+  if (trimmedEnv) return trimmedEnv;
+
+  const trimmedFallback = (fallbackValue || '').trim();
+  return trimmedFallback || '';
+}
+
 // Kolik výsledků si necháme scrapnout markdownem z Firecrawlu na jeden dotaz.
 const SEARCH_RESULT_LIMIT = 8;
 
@@ -431,11 +455,14 @@ async function handleRequest(req, res) {
 
   const filters = (body.filters && typeof body.filters === 'object') ? body.filters : {};
 
-  const geminiKey = process.env.GEMINI_API_KEY;
-  const firecrawlKey = process.env.FIRECRAWL_API_KEY;
+  const geminiKey = resolveApiKey(process.env.GEMINI_API_KEY, GEMINI_API_KEY_FALLBACK);
+  const firecrawlKey = resolveApiKey(process.env.FIRECRAWL_API_KEY, FIRECRAWL_API_KEY_FALLBACK);
   if (!geminiKey || !firecrawlKey) {
     sendJson(res, 500, {
-      error: 'Server není nakonfigurovaný — chybí GEMINI_API_KEY a/nebo FIRECRAWL_API_KEY.',
+      error: 'Server není nakonfigurovaný — chybí GEMINI_API_KEY a/nebo '
+        + 'FIRECRAWL_API_KEY (nastav je jako Environment Variables na Vercelu, '
+        + 'nebo dočasně vyplň GEMINI_API_KEY_FALLBACK / FIRECRAWL_API_KEY_FALLBACK '
+        + 'na začátku api/search.js).',
     });
     return;
   }
@@ -509,6 +536,7 @@ module.exports = async function handler(req, res) {
     });
   }
 };
+
 
 
 
