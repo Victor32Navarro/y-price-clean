@@ -228,16 +228,64 @@ async function geminiExtract(systemPrompt, userPrompt, apiKey) {
   return text;
 }
 
-// Bezpečně vyčistí případné Markdown bloky a naparsuje JSON pole. Nikdy
-// nepadá nezachyceně — chyby parsování řeší volající pomocí try/catch.
-function parseOffersFromText(text) {
-  let cleaned = text.trim().replace(/```json/gi, '').replace(/```/g, '').trim();
-  const start = cleaned.indexOf('[');
-  const end = cleaned.lastIndexOf(']');
-  if (start !== -1 && end !== -1 && end > start) {
-    cleaned = cleaned.slice(start, end + 1);
+// Vyčistí odpověď od Markdown code fence bloků. Gemini je občas zabalí
+// jako ```json ... ```, jindy jen jako ``` ... ``` (bez jazykové nálepky),
+// nebo přidá vysvětlující větu před/za blokem — tohle pokrývá všechny
+// tři varianty.
+function stripCodeFences(text) {
+  let cleaned = text.trim();
+
+  // ```json ... ``` nebo ```javascript ... ``` (case-insensitive)
+  const fenced = cleaned.match(/```[a-z]*\s*([\s\S]*?)\s*```/i);
+  if (fenced) {
+    cleaned = fenced[1].trim();
+  } else {
+    // Osamocené ``` znaky bez páru (např. jen na začátku) — smaž je.
+    cleaned = cleaned.replace(/```[a-z]*/gi, '').trim();
   }
-  return JSON.parse(cleaned);
+
+  return cleaned;
+}
+
+// Odřízne jakýkoli text před prvním '[' a po posledním ']' — řeší
+// případy, kdy model přidá úvodní nebo závěrečnou větu mimo JSON pole.
+function extractJsonArraySlice(text) {
+  const start = text.indexOf('[');
+  const end = text.lastIndexOf(']');
+  if (start !== -1 && end !== -1 && end > start) {
+    return text.slice(start, end + 1);
+  }
+  return text;
+}
+
+// Opraví pár nejčastějších drobných chyb, které JSON.parse jinak odmítne
+// (trailing čárky před ] nebo }, "chytré" uvozovky místo rovných).
+function repairCommonJsonIssues(text) {
+  return text
+    .replace(/,\s*([\]}])/g, '$1')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"');
+}
+
+// Bezpečně vyčistí Markdown/okolní text a naparsuje JSON pole. Zkusí to
+// dvakrát — podruhé už s opravou drobných formátovacích chyb — než se
+// definitivně vzdá. Nikdy nepadá nezachyceně; chybu řeší volající pomocí
+// try/catch a vrátí ji jako čitelnou JSON odpověď, ne syrový výjimkový text.
+function parseOffersFromText(text) {
+  const withoutFences = stripCodeFences(text);
+  const sliced = extractJsonArraySlice(withoutFences);
+
+  try {
+    return JSON.parse(sliced);
+  } catch (firstError) {
+    try {
+      return JSON.parse(repairCommonJsonIssues(sliced));
+    } catch (secondError) {
+      // Necháme vyletět tu druhou chybu — je užitečnější, protože už
+      // proběhla po pokusu o opravu.
+      throw secondError;
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -305,7 +353,7 @@ function setCorsHeaders(res) {
   res.setHeader('Access-Control-Max-Age', '86400');
 }
 
-module.exports = async function handler(req, res) {
+async function handleRequest(req, res) {
   setCorsHeaders(res);
 
   if (req.method === 'OPTIONS') {
@@ -374,8 +422,11 @@ module.exports = async function handler(req, res) {
     try {
       parsedOffers = parseOffersFromText(rawText);
     } catch (err) {
+      // I po dvou pokusech o opravu (viz parseOffersFromText) se JSON
+      // nepodařilo naparsovat — vrátíme čitelnou JSON chybu i syrový text
+      // pro ladění, místo aby cokoli neošetřené uniklo mimo tenhle blok.
       res.status(502).json({
-        error: 'Odpověď AI se nepodařilo rozparsovat jako JSON.',
+        error: 'Odpověď AI se nepodařilo rozparsovat jako JSON ani po opravě formátu.',
         raw: rawText,
       });
       return;
@@ -391,4 +442,25 @@ module.exports = async function handler(req, res) {
   }
 
   res.status(200).json({ offers });
+}
+
+// Vnější bezpečnostní síť: garantuje, že klient VŽDY dostane validní JSON,
+// i kdyby nastala úplně neočekávaná chyba, kterou výše neošetřuje žádný
+// try/catch. Bez tohohle by Vercel při nezachycené výjimce vrátil vlastní
+// HTML/textovou chybovou stránku — a frontendové `res.json()` by na ní
+// spadlo s nepříjemnou obecnou chybou prohlížeče (např. "The string did
+// not match the expected pattern." v Safari), místo srozumitelné hlášky.
+module.exports = async function handler(req, res) {
+  try {
+    await handleRequest(req, res);
+  } catch (err) {
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: 'Neočekávaná chyba serveru.',
+        detail: String(err && err.message || err),
+      });
+    }
+  }
 };
+
+
