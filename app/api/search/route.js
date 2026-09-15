@@ -12,10 +12,11 @@
 import { runProductSearch } from '@/lib/search';
 import { buildCacheKey, getCachedOffers, setCachedOffers } from '@/lib/cache';
 
-// Firecrawl + Gemini dohromady občas trvají déle než výchozích 10 s na
-// Vercel Hobby plánu — bez tohohle by appka takový požadavek "zabila" a
-// frontend by dostal místo JSONu obecnou chybovou stránku platformy.
-export const maxDuration = 60;
+// S Fluid Compute (zapnuté v Project Settings → Functions) jde tenhle
+// limit zvednout nad původních 60 s bez něj. 120 s dává dost prostoru
+// i pro pomalejší kombinaci Firecrawl + Gemini, aniž bychom mrhali časem
+// navíc, co appka stejně nikdy nevyužije.
+export const maxDuration = 120;
 
 async function handlePost(request) {
   let body;
@@ -61,7 +62,8 @@ async function handlePost(request) {
 }
 
 // Vnější bezpečnostní síť — garantuje validní JSON, i kdyby nastala
-// úplně neočekávaná chyba, kterou handlePost výše neošetřuje.
+// úplně neočekávaná chyba, kterou handlePost výše neošetřuje. Přesně
+// tohle dřív chybělo starému api/search.js a řešili jsme to tam stejně.
 export async function POST(request) {
   try {
     return await handlePost(request);
@@ -83,3 +85,4 @@ export function OPTIONS() {
     },
   });
 }
+
