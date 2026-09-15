@@ -1,0 +1,9 @@
+{
+  "name": "y-price-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Serverless backend pro Y-Price – Firecrawl + Gemini, bez npm závislostí.",
+  "engines": {
+    "node": ">=18"
+  }
+}

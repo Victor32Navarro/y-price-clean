@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Y-Price — prémiový cenový srovnávač tenisek a streetwearu</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          base: '#111111',
+          card: '#1E1E1E',
+          cardsoft: '#262626',
+          line: '#2E2E2E',
+          accent: { DEFAULT: '#EC4899', dark: '#C22A75', soft: '#F472B6' },
+        },
+        fontFamily: {
+          display: ['"Space Grotesk"', 'sans-serif'],
+          body: ['Inter', 'sans-serif'],
+        },
+      },
+    },
+  };
+</script>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Inter', sans-serif; }
+
+  ::selection { background: #EC4899; color: #111111; }
+  :focus-visible { outline: 2px solid #EC4899; outline-offset: 2px; }
+
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none; margin: 0;
+  }
+  input[type="number"] { -moz-appearance: textfield; }
+
+  .chip {
+    font-size: 12px; padding: 7px 12px; border-radius: 999px;
+    background: #1E1E1E; border: 1px solid #2E2E2E; color: #d4d4d4;
+    transition: border-color .15s, color .15s, background .15s;
+    white-space: nowrap;
+  }
+  .chip:hover { border-color: #EC4899; color: #fff; }
+
+  select.field, input.field {
+    width: 100%; background: #1E1E1E; color: #f5f5f5;
+    border: 1px solid #2E2E2E; border-radius: 10px;
+    padding: 10px 12px; font-size: 13.5px;
+  }
+  select.field:focus, input.field:focus { border-color: #EC4899; outline: none; }
+
+  .color-pill {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 10px 6px 6px; border-radius: 999px;
+    border: 1px solid #2E2E2E; background: #1E1E1E;
+    font-size: 12px; color: #cfcfcf; cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  .color-pill.active { border-color: #EC4899; background: #2a1620; color: #fff; }
+  .color-dot {
+    width: 15px; height: 15px; border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.25); flex-shrink: 0;
+  }
+
+  .btn-primary {
+    background: #EC4899; color: #111111; font-weight: 600;
+    border-radius: 10px; padding: 11px 20px; font-size: 14px;
+    transition: background .15s, transform .1s;
+  }
+  .btn-primary:hover { background: #f472b6; }
+  .btn-primary:active { transform: scale(0.98); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  @keyframes pulse-pink {
+    0%, 100% { opacity: 0.45; }
+    50% { opacity: 1; }
+  }
+  .skeleton-card { animation: pulse-pink 1.3s ease-in-out infinite; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner {
+    width: 18px; height: 18px; border-radius: 999px;
+    border: 2.5px solid rgba(236,72,153,0.25);
+    border-top-color: #EC4899; animation: spin 0.7s linear infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton-card, .spinner { animation: none; }
+  }
+</style>
+</head>
+<body class="bg-base text-neutral-100 min-h-screen">
+
+<div class="max-w-6xl mx-auto px-5 sm:px-8 pb-24">
+
+  <!-- Header -->
+  <header class="flex items-center justify-between py-6 border-b border-line">
+    <div class="flex items-baseline gap-1">
+      <span class="font-display font-700 text-2xl tracking-tight">Y</span>
+      <span class="font-display font-700 text-2xl tracking-tight text-accent">-Price</span>
+    </div>
+  </header>
+
+  <!-- Hero / search -->
+  <section class="pt-8 pb-6">
+    <h1 class="font-display font-700 text-3xl sm:text-4xl leading-tight">
+      Najdi nejlevnější <span class="text-accent">ověřenou</span> cenu.
+    </h1>
+    <p class="text-sm text-neutral-400 mt-2 max-w-xl">
+      Y-Price prohledá živě internet a najde skladem dostupné nabídky napříč
+      oficiálními e-shopy a autorizovanými platformami — žádné bazary.
+    </p>
+
+    <form id="search-form" class="mt-6 space-y-4">
+      <div>
+        <input id="query-input" type="text" class="field !py-3.5 !text-sm"
+          placeholder='např. "Jordan 4 Military Blue 43"'>
+      </div>
+
+      <div class="flex flex-wrap gap-2" id="chips-row"></div>
+
+      <div class="grid sm:grid-cols-2 gap-3">
+        <div>
+          <label class="block text-[11px] text-neutral-500 mb-1">Značka</label>
+          <select id="brand-select" class="field"></select>
+        </div>
+        <div>
+          <label class="block text-[11px] text-neutral-500 mb-1">Kategorie</label>
+          <select id="category-select" class="field"></select>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3 max-w-sm">
+        <div>
+          <label class="block text-[11px] text-neutral-500 mb-1">Cena od (Kč)</label>
+          <input id="price-min" type="number" min="0" step="100"
+            class="field" placeholder="0">
+        </div>
+        <div>
+          <label class="block text-[11px] text-neutral-500 mb-1">Cena do (Kč)</label>
+          <input id="price-max" type="number" min="0" step="100"
+            class="field" placeholder="bez limitu">
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-[11px] text-neutral-500 mb-2">Barva</label>
+        <div id="color-row" class="flex flex-wrap gap-2"></div>
+      </div>
+
+      <button type="submit" id="search-btn" class="btn-primary w-full sm:w-auto">
+        Najít nejlepší cenu
+      </button>
+    </form>
+  </section>
+
+  <!-- Results -->
+  <section id="results" class="pt-4" aria-live="polite"></section>
+
+</div>
+
+<script>
+  // ===========================================================================
+  // DATA: kategorie, značky, barvy, rychlé dotazy
+  // ===========================================================================
+
+  const CATEGORIES = [
+    { group: 'Obuv', items: [
+      { id: 'sneakers', label: 'Tenisky' },
+    ]},
+    { group: 'Oblečení', items: [
+      { id: 'hoodie', label: 'Mikiny (Hoodies)' },
+      { id: 'tshirt', label: 'Trička (T-Shirts)' },
+      { id: 'jacket', label: 'Bundy & Kabáty' },
+      { id: 'pants', label: 'Kalhoty & Tepláky' },
+      { id: 'shorts', label: 'Kraťasy' },
+      { id: 'jersey', label: 'Dresy' },
+      { id: 'fleece', label: 'Fleecovky / Mikiny na zip' },
+    ]},
+    { group: 'Doplňky', items: [
+      { id: 'cap', label: 'Kšiltovky' },
+      { id: 'bucket', label: 'Klobouky (Bucket Hats)' },
+      { id: 'beanie', label: 'Kulichy (Beanies)' },
+      { id: 'belt', label: 'Pásky' },
+      { id: 'jewelry', label: 'Šperky' },
+      { id: 'sunglasses', label: 'Sluneční brýle' },
+      { id: 'crossbody', label: 'Tašky & Crossbody' },
+      { id: 'backpack', label: 'Batohy' },
+      { id: 'wallet', label: 'Peněženky' },
+      { id: 'socks', label: 'Ponožky' },
+      { id: 'scarf', label: 'Šály & Šátky' },
+      { id: 'collectible', label: 'Svíčky & Art hračky (Kaws, Bearbrick...)' },
+    ]},
+  ];
+
+  const BRANDS = [
+    { group: 'Sportovní & Skate', items: [
+      'Nike', 'Jordan', 'Adidas', 'Yeezy', 'New Balance', 'Asics', 'Salomon', 'Crocs',
+    ]},
+    { group: 'Streetwear & Hype', items: [
+      'Supreme', 'Palace', 'Stüssy', 'Carhartt WIP', 'BAPE', 'Trapstar', 'Corteiz',
+      'Cactus Plant Flea Market (CPFM)', 'Broken Planet', 'Hellstar',
+    ]},
+    { group: 'Luxusní domy', items: [
+      'Balenciaga', 'Rick Owens', 'Off-White', 'Louis Vuitton', 'Gucci', 'Prada',
+      'Burberry', 'Bottega Veneta', 'Saint Laurent',
+    ]},
+    { group: 'Prémiový contemporary', items: [
+      'Fear of God (Essentials)', 'Palm Angels', 'Ralph Lauren', 'Heron Preston',
+      "A-COLD-WALL*", 'Kith', 'Denim Tears', 'Amiri',
+    ]},
+  ];
+
+  const COLORS = [
+    { id: 'black', label: 'Černá', hex: '#1a1a1a' },
+    { id: 'white', label: 'Bílá', hex: '#f5f5f5' },
+    { id: 'gray', label: 'Šedá', hex: '#9ca3af' },
+    { id: 'beige', label: 'Béžová', hex: '#d8c3a5' },
+    { id: 'brown', label: 'Hnědá', hex: '#6b4423' },
+    { id: 'red', label: 'Červená', hex: '#dc2626' },
+    { id: 'blue', label: 'Modrá', hex: '#2563eb' },
+    { id: 'green', label: 'Zelená', hex: '#16a34a' },
+    { id: 'pink', label: 'Růžová', hex: '#f472b6' },
+    { id: 'purple', label: 'Fialová', hex: '#7c3aed' },
+    { id: 'yellow', label: 'Žlutá', hex: '#eab308' },
+    { id: 'orange', label: 'Oranžová', hex: '#f97316' },
+    { id: 'multi', label: 'Multikolor', hex: null },
+  ];
+
+  const QUICK_CHIPS = [
+    'Jordan 4 Retro', 'Supreme Box Logo Hoodie', 'Yeezy 350 Zebra',
+    'Nike Dunk Low Panda', 'Balenciaga Track', 'Stüssy 8 Ball Hoodie',
+    'New Balance 550', 'Carhartt WIP Detroit Jacket',
+  ];
+
+  // Bazary a P2P inzerce — nikdy nesmí projít do výsledků.
+  const BANNED_KEYWORDS = [
+    // CZ/SK bazary a inzertní portály
+    'vinted', 'bazoš', 'bazos', 'sbazar', 'aukro', 'hyperinzerce',
+    'annonce', 'bazarek', 'modrykonik',
+    // Globální a evropské bazary / P2P
+    'depop', 'ebay', 'craigslist', 'olx', 'kleinanzeigen',
+    'grailed', 'vestiairecollective',
+    // Sociální sítě / marketplace
+    'facebook.com/marketplace', 'marketplace.facebook',
+  ];
+
+  // ===========================================================================
+  // UI: naplnění selectů, chipů, barevných pilulek
+  // ===========================================================================
+
+  const brandSelect = document.getElementById('brand-select');
+  const categorySelect = document.getElementById('category-select');
+  const chipsRow = document.getElementById('chips-row');
+  const colorRow = document.getElementById('color-row');
+  const queryInput = document.getElementById('query-input');
+  const priceMinInput = document.getElementById('price-min');
+  const priceMaxInput = document.getElementById('price-max');
+  const searchForm = document.getElementById('search-form');
+  const searchBtn = document.getElementById('search-btn');
+  const resultsEl = document.getElementById('results');
+
+  function fillGroupedSelect(selectEl, groups, anyLabel) {
+    const anyOpt = document.createElement('option');
+    anyOpt.value = '';
+    anyOpt.textContent = anyLabel;
+    selectEl.appendChild(anyOpt);
+
+    groups.forEach((group) => {
+      const og = document.createElement('optgroup');
+      og.label = group.group;
+      group.items.forEach((item) => {
+        const opt = document.createElement('option');
+        if (typeof item === 'string') {
+          opt.value = item;
+          opt.textContent = item;
+        } else {
+          opt.value = item.id;
+          opt.textContent = item.label;
+        }
+        og.appendChild(opt);
+      });
+      selectEl.appendChild(og);
+    });
+  }
+
+  fillGroupedSelect(brandSelect, BRANDS, 'Kterákoli značka');
+  fillGroupedSelect(categorySelect, CATEGORIES, 'Jakákoli kategorie');
+
+  QUICK_CHIPS.forEach((text) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'chip';
+    btn.textContent = text;
+    btn.addEventListener('click', () => {
+      queryInput.value = text;
+      searchForm.requestSubmit();
+    });
+    chipsRow.appendChild(btn);
+  });
+
+  const selectedColors = new Set();
+
+  COLORS.forEach((color) => {
+    const pill = document.createElement('button');
+    pill.type = 'button';
+    pill.className = 'color-pill';
+    pill.dataset.colorId = color.id;
+
+    const dot = document.createElement('span');
+    dot.className = 'color-dot';
+    if (color.hex) {
+      dot.style.background = color.hex;
+    } else {
+      dot.style.background =
+        'conic-gradient(from 0deg, #ec4899, #eab308, #16a34a, #2563eb, #ec4899)';
+    }
+    pill.appendChild(dot);
+    pill.appendChild(document.createTextNode(color.label));
+
+    pill.addEventListener('click', () => {
+      if (selectedColors.has(color.id)) {
+        selectedColors.delete(color.id);
+        pill.classList.remove('active');
+      } else {
+        selectedColors.add(color.id);
+        pill.classList.add('active');
+      }
+    });
+    colorRow.appendChild(pill);
+  });
+
+  // ===========================================================================
+  // VOLÁNÍ SERVEROVÉHO ENDPOINTU /api/search
+  // ===========================================================================
+  // Frontend už neví nic o Gemini, Firecrawlu ani žádném API klíči — všechnu
+  // tuhle logiku (prompty, dvoufázové vyhledávání, klíče) drží výhradně
+  // serverless funkce api/search.js pod centrálním klíčem z Vercelu.
+
+  async function fetchOffers(query, filters) {
+    let res;
+    try {
+      res = await fetch('/api/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, filters }),
+      });
+    } catch (err) {
+      throw new Error('Nepodařilo se spojit se serverem. Zkontroluj připojení.');
+    }
+
+    if (!res.ok) {
+      let detail = '';
+      try { detail = await res.text(); } catch (e) { /* ignore */ }
+      throw new Error(`Server vrátil chybu (${res.status}). ${detail.slice(0, 150)}`);
+    }
+
+    const data = await res.json();
+    if (!data || !Array.isArray(data.offers)) {
+      throw new Error('Server vrátil neočekávaná data.');
+    }
+    return data.offers;
+  }
+
+  function containsBanned(value) {
+    const text = (value || '').toString().toLowerCase();
+    return BANNED_KEYWORDS.some((k) => text.includes(k));
+  }
+
+  function sanitizeOffers(rawOffers, filters) {
+    if (!Array.isArray(rawOffers)) return [];
+
+    return rawOffers
+      .filter((item) => item && typeof item === 'object')
+      .filter((item) => typeof item.price === 'number' && item.price > 0)
+      .filter((item) => typeof item.url === 'string' && item.url.startsWith('http'))
+      .filter((item) => !containsBanned(item.store) && !containsBanned(item.url)
+        && !containsBanned(item.title))
+      .filter((item) => filters.priceMin == null || item.price >= filters.priceMin)
+      .filter((item) => filters.priceMax == null || item.price <= filters.priceMax)
+      .map((item) => ({
+        store: String(item.store || '').trim(),
+        title: String(item.title || '').trim(),
+        price: Math.round(item.price),
+        url: String(item.url).trim(),
+        availability: String(item.availability || 'Skladem').trim(),
+      }))
+      .sort((a, b) => a.price - b.price);
+  }
+
+  // ===========================================================================
+  // RENDEROVÁNÍ VÝSLEDKŮ
+  // ===========================================================================
+
+  function formatCZK(amount) {
+    return amount.toLocaleString('cs-CZ') + ' Kč';
+  }
+
+  function renderLoading() {
+    const cards = [0, 1, 2].map(() => `
+      <div class="skeleton-card bg-card border border-line rounded-xl p-5 h-28"></div>
+    `).join('');
+    resultsEl.innerHTML = `
+      <div class="flex items-center gap-2 text-sm text-accent-soft mb-4">
+        <span class="spinner"></span> Y-Price hledá živě na webu…
+      </div>
+      <div class="grid gap-3">${cards}</div>
+    `;
+  }
+
+  function renderError(message) {
+    resultsEl.innerHTML = `
+      <div class="border border-accent/40 bg-accent/10 text-accent-soft
+                  rounded-xl p-4 text-sm">
+        ${message}
+      </div>
+    `;
+  }
+
+  function renderEmpty(query) {
+    resultsEl.innerHTML = `
+      <div class="border border-line bg-card rounded-xl p-6 text-sm text-neutral-400">
+        Pro dotaz „${query}" se nepodařilo najít žádnou aktuálně skladem
+        dostupnou nabídku na ověřeném e-shopu. Zkus upravit dotaz nebo filtry.
+      </div>
+    `;
+  }
+
+  function offerCard(offer) {
+    return `
+      <div class="bg-card border border-line rounded-xl p-5 flex flex-col
+                  sm:flex-row sm:items-center gap-4 hover:border-accent/50
+                  transition-colors">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="text-xs font-semibold text-accent-soft uppercase
+                         tracking-wide">${offer.store}</span>
+            <span class="text-[10px] text-neutral-500">•</span>
+            <span class="text-[11px] text-neutral-400 flex items-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+              ${offer.availability}
+            </span>
+          </div>
+          <p class="text-sm text-neutral-100 truncate">${offer.title}</p>
+        </div>
+        <div class="flex items-center justify-between sm:justify-end gap-4
+                    sm:w-56 shrink-0">
+          <span class="font-display font-700 text-xl text-white">
+            ${formatCZK(offer.price)}
+          </span>
+          <a href="${offer.url}" target="_blank" rel="noopener"
+            class="btn-primary !py-2 !px-4 !text-xs whitespace-nowrap">
+            Koupit
+          </a>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderResults(offers, query) {
+    if (!offers.length) {
+      renderEmpty(query);
+      return;
+    }
+    resultsEl.innerHTML = `
+      <div class="flex items-baseline justify-between mb-4">
+        <h2 class="text-sm text-neutral-400">
+          Výsledky pro <span class="text-white">„${query}"</span>
+          <span class="text-neutral-600">· ${offers.length} nabídek</span>
+        </h2>
+        <span class="text-[11px] text-neutral-600">cena ↑</span>
+      </div>
+      <div class="grid gap-3">
+        ${offers.map(offerCard).join('')}
+      </div>
+      <p class="mt-5 text-[11px] text-neutral-600 leading-relaxed max-w-xl">
+        Ceny a dostupnost ověřuje AI živým vyhledáváním v okamžiku dotazu —
+        před nákupem to prosím ještě zkontroluj přímo na stránce obchodu.
+      </p>
+    `;
+  }
+
+  // ===========================================================================
+  // HLAVNÍ SEARCH HANDLER
+  // ===========================================================================
+
+  function setLoadingState(isLoading) {
+    searchBtn.disabled = isLoading;
+    searchBtn.textContent = isLoading ? 'Hledám…' : 'Najít nejlepší cenu';
+  }
+
+  searchForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const query = queryInput.value.trim();
+    if (!query) {
+      renderError('Napiš, co hledáš — název modelu, značku, velikost…');
+      return;
+    }
+
+    const filters = {
+      brand: brandSelect.value || null,
+      category: (() => {
+        const opt = categorySelect.selectedOptions[0];
+        return categorySelect.value ? opt.textContent : null;
+      })(),
+      colors: Array.from(selectedColors).map(
+        (id) => COLORS.find((c) => c.id === id).label
+      ),
+      priceMin: priceMinInput.value ? Number(priceMinInput.value) : null,
+      priceMax: priceMaxInput.value ? Number(priceMaxInput.value) : null,
+    };
+
+    setLoadingState(true);
+    renderLoading();
+
+    try {
+      const rawOffers = await fetchOffers(query, filters);
+      const offers = sanitizeOffers(rawOffers, filters);
+      renderResults(offers, query);
+    } catch (err) {
+      renderError(err.message || 'Nastala neočekávaná chyba.');
+    } finally {
+      setLoadingState(false);
+    }
+  });
+</script>
+</body>
+</html>
