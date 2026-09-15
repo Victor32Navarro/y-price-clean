@@ -19,6 +19,21 @@
  * z výstupu odstraní cokoli, co by přesto na bazar nebo P2P inzerci
  * ukazovalo.
  *
+ * ODOLNOST VŮČI "The string did not match the expected pattern" (Safari):
+ * Tahle chyba v prohlížeči vzniká, když frontend zavolá `res.json()` na
+ * odpověď, která NENÍ platný JSON (např. HTML/textová crash stránka
+ * z platformy po nezachycené výjimce). Proto tenhle soubor:
+ *   - nikde nepoužívá pomocné metody typu `res.status().json()` (ty
+ *     existují jen díky Vercel wrapperu — pokud by z libovolného důvodu
+ *     chyběly, volání by spadlo ještě dřív, než by se cokoli odeslalo),
+ *     ale vždy jen syrové Node.js API: `res.statusCode`, `res.setHeader`,
+ *     `res.end()`. Tohle funguje vždy, bez ohledu na runtime,
+ *   - každou jednu odpověď posílá přes jediný `sendJson()` helper, který
+ *     natvrdo nastaví `Content-Type: application/json` a tělo vždy
+ *     vytvoří přes `JSON.stringify()` — nikdy neposílá syrový text/HTML,
+ *   - celou logiku obaluje vnějším try/catch, který i při úplně
+ *     neočekávané chybě garantuje validní JSON odpověď.
+ *
  * VSTUP (POST, JSON tělo):
  *   {
  *     "query": "Jordan 4 Military Blue 43",
@@ -43,6 +58,42 @@ const GEMINI_URL =
 
 // Kolik výsledků si necháme scrapnout markdownem z Firecrawlu na jeden dotaz.
 const SEARCH_RESULT_LIMIT = 8;
+
+// ---------------------------------------------------------------------------
+// ODESÍLÁNÍ ODPOVĚDI — jediné místo, které smí psát do `res`
+// ---------------------------------------------------------------------------
+// Používá výhradně holé Node.js API, žádné frameworkové pomůcky. Díky tomu
+// nemůže selhat kvůli chybějící metodě a vždy pošle validní JSON tělo se
+// správnou hlavičkou Content-Type.
+
+function sendJson(res, statusCode, payload) {
+  if (res.headersSent) return;
+  res.statusCode = statusCode;
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  let body;
+  try {
+    body = JSON.stringify(payload);
+  } catch (err) {
+    // Payload se z nějakého důvodu nedá serializovat (nemělo by nastat,
+    // ale kdyby ano, pošleme aspoň minimální validní JSON, ne pád).
+    res.statusCode = 500;
+    body = JSON.stringify({ error: 'Odpověď serveru se nepodařilo sestavit jako JSON.' });
+  }
+  res.end(body);
+}
+
+function sendNoContent(res, statusCode) {
+  if (res.headersSent) return;
+  res.statusCode = statusCode;
+  res.end();
+}
+
+function setCorsHeaders(res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Max-Age', '86400');
+}
 
 // ---------------------------------------------------------------------------
 // ČERNÁ LISTINA — bazary a P2P inzerce
@@ -228,6 +279,10 @@ async function geminiExtract(systemPrompt, userPrompt, apiKey) {
   return text;
 }
 
+// ---------------------------------------------------------------------------
+// ČIŠTĚNÍ A PARSOVÁNÍ ODPOVĚDI Z GEMINI (požadavek č. 1)
+// ---------------------------------------------------------------------------
+
 // Vyčistí odpověď od Markdown code fence bloků. Gemini je občas zabalí
 // jako ```json ... ```, jindy jen jako ``` ... ``` (bez jazykové nálepky),
 // nebo přidá vysvětlující větu před/za blokem — tohle pokrývá všechny
@@ -235,7 +290,6 @@ async function geminiExtract(systemPrompt, userPrompt, apiKey) {
 function stripCodeFences(text) {
   let cleaned = text.trim();
 
-  // ```json ... ``` nebo ```javascript ... ``` (case-insensitive)
   const fenced = cleaned.match(/```[a-z]*\s*([\s\S]*?)\s*```/i);
   if (fenced) {
     cleaned = fenced[1].trim();
@@ -281,8 +335,6 @@ function parseOffersFromText(text) {
     try {
       return JSON.parse(repairCommonJsonIssues(sliced));
     } catch (secondError) {
-      // Necháme vyletět tu druhou chybu — je užitečnější, protože už
-      // proběhla po pokusu o opravu.
       throw secondError;
     }
   }
@@ -315,7 +367,7 @@ function sanitizeOffers(rawOffers, filters) {
 }
 
 // ---------------------------------------------------------------------------
-// HTTP HANDLER
+// ČTENÍ TĚLA POŽADAVKU
 // ---------------------------------------------------------------------------
 
 function readJsonBody(req) {
@@ -346,23 +398,20 @@ function readJsonBody(req) {
   });
 }
 
-function setCorsHeaders(res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  res.setHeader('Access-Control-Max-Age', '86400');
-}
+// ---------------------------------------------------------------------------
+// HTTP HANDLER (požadavek č. 2 — vždy jen validní JSON, nikdy syrový text/HTML)
+// ---------------------------------------------------------------------------
 
 async function handleRequest(req, res) {
   setCorsHeaders(res);
 
   if (req.method === 'OPTIONS') {
-    res.status(204).end();
+    sendNoContent(res, 204);
     return;
   }
 
   if (req.method !== 'POST') {
-    res.status(405).json({ error: 'Použij POST požadavek s JSON tělem.' });
+    sendJson(res, 405, { error: 'Použij POST požadavek s JSON tělem.' });
     return;
   }
 
@@ -370,13 +419,13 @@ async function handleRequest(req, res) {
   try {
     body = await readJsonBody(req);
   } catch (err) {
-    res.status(400).json({ error: 'Tělo požadavku není platný JSON.' });
+    sendJson(res, 400, { error: 'Tělo požadavku není platný JSON.' });
     return;
   }
 
   const query = (body.query || body.q || '').toString().trim();
   if (!query) {
-    res.status(400).json({ error: 'Chybí "query" v těle požadavku.' });
+    sendJson(res, 400, { error: 'Chybí "query" v těle požadavku.' });
     return;
   }
 
@@ -385,7 +434,7 @@ async function handleRequest(req, res) {
   const geminiKey = process.env.GEMINI_API_KEY;
   const firecrawlKey = process.env.FIRECRAWL_API_KEY;
   if (!geminiKey || !firecrawlKey) {
-    res.status(500).json({
+    sendJson(res, 500, {
       error: 'Server není nakonfigurovaný — chybí GEMINI_API_KEY a/nebo FIRECRAWL_API_KEY.',
     });
     return;
@@ -396,7 +445,7 @@ async function handleRequest(req, res) {
   try {
     searchResults = await firecrawlSearch(query, firecrawlKey);
   } catch (err) {
-    res.status(502).json({
+    sendJson(res, 502, {
       error: 'Chyba při vyhledávání přes Firecrawl.',
       detail: String(err && err.message || err),
     });
@@ -406,7 +455,7 @@ async function handleRequest(req, res) {
   if (!searchResults.length) {
     // Nic ověřeného se nenašlo už na úrovni vyhledávání — nemá smysl
     // zatěžovat Gemini prázdným kontextem, rovnou vrátíme prázdný výsledek.
-    res.status(200).json({ offers: [] });
+    sendJson(res, 200, { offers: [] });
     return;
   }
 
@@ -425,7 +474,7 @@ async function handleRequest(req, res) {
       // I po dvou pokusech o opravu (viz parseOffersFromText) se JSON
       // nepodařilo naparsovat — vrátíme čitelnou JSON chybu i syrový text
       // pro ladění, místo aby cokoli neošetřené uniklo mimo tenhle blok.
-      res.status(502).json({
+      sendJson(res, 502, {
         error: 'Odpověď AI se nepodařilo rozparsovat jako JSON ani po opravě formátu.',
         raw: rawText,
       });
@@ -434,33 +483,32 @@ async function handleRequest(req, res) {
 
     offers = sanitizeOffers(parsedOffers, filters);
   } catch (err) {
-    res.status(502).json({
+    sendJson(res, 502, {
       error: 'Chyba při zpracování odpovědi Gemini.',
       detail: String(err && err.message || err),
     });
     return;
   }
 
-  res.status(200).json({ offers });
+  sendJson(res, 200, { offers });
 }
 
-// Vnější bezpečnostní síť: garantuje, že klient VŽDY dostane validní JSON,
-// i kdyby nastala úplně neočekávaná chyba, kterou výše neošetřuje žádný
-// try/catch. Bez tohohle by Vercel při nezachycené výjimce vrátil vlastní
-// HTML/textovou chybovou stránku — a frontendové `res.json()` by na ní
-// spadlo s nepříjemnou obecnou chybou prohlížeče (např. "The string did
-// not match the expected pattern." v Safari), místo srozumitelné hlášky.
+// Vnější bezpečnostní síť: garantuje, že klient VŽDY dostane validní JSON
+// se správnou hlavičkou, i kdyby nastala úplně neočekávaná chyba, kterou
+// výše neošetřuje žádný try/catch. Právě tohle přímo řeší chybu
+// "The string did not match the expected pattern" v mobilním Safari —
+// ta vznikala přesně ve chvíli, kdy frontend dostal místo JSONu syrovou
+// chybovou stránku a pokusil se ji naparsovat jako JSON.
 module.exports = async function handler(req, res) {
   try {
     await handleRequest(req, res);
   } catch (err) {
-    if (!res.headersSent) {
-      res.status(500).json({
-        error: 'Neočekávaná chyba serveru.',
-        detail: String(err && err.message || err),
-      });
-    }
+    sendJson(res, 500, {
+      error: 'Neočekávaná chyba serveru.',
+      detail: String(err && err.message || err),
+    });
   }
 };
+
 
 
