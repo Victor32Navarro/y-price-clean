@@ -46,27 +46,56 @@ function isLocalHourMatch(timeZone, targetHour) {
 }
 
 // Kurátorovaný seznam nejžádanějších kombinací — ne celý katalog (stovky
-// značek × desítky kategorií by se do jednoho běhu nevešly). Postupně si
-// tenhle seznam uprav podle toho, co lidé v appce nejvíc hledají.
+// značek × desítky kategorií by se do jednoho běhu nevešly).
+//
+// ČASOVÝ ROZPOČET: jedno vyhledání (Firecrawl + Gemini) trvá řádově 8–20 s.
+// Při 26 položkách sekvenčně je to v nejhorším případě ~26 × 20 s = 520 s —
+// nad limitem i s Fluid Compute (300 s). Realisticky bude průměr níž (běžné
+// dotazy odpoví rychleji), ale sleduj to: po každém běhu zkontroluj JSON
+// odpověď endpointu (pole "failed" a jednotlivé položky v "results" se
+// status: "error") — pokud tam vidíš timeouty, seznam zkrať. Až budeš chtít
+// jít výrazně nad tohle množství, řešením je rozdělit seed dotazy do víc
+// menších dávek (víc cron záznamů ve vercel.json s různými cestami, nebo
+// Upstash QStash pro plné paralelní zpracování — viz naše dřívější
+// doporučení pro škálování).
 const SEED_QUERIES = [
+  // Tenisky
   { query: 'Jordan 4 Retro', filters: { brand: 'Jordan', category: 'Tenisky' } },
   { query: 'Nike Dunk Low Panda', filters: { brand: 'Nike', category: 'Tenisky' } },
   { query: 'Yeezy 350 Zebra', filters: { brand: 'Yeezy', category: 'Tenisky' } },
   { query: 'New Balance 550', filters: { brand: 'New Balance', category: 'Tenisky' } },
+  { query: 'adidas Samba OG', filters: { brand: 'adidas', category: 'Tenisky' } },
+  { query: 'ASICS Gel-Kayano 14', filters: { brand: 'ASICS', category: 'Tenisky' } },
+  { query: 'Puma Speedcat', filters: { brand: 'Puma', category: 'Tenisky' } },
+  { query: 'Crocs Classic Clog', filters: { brand: 'Crocs', category: 'Tenisky' } },
+  { query: 'Off-White Out Of Office', filters: { brand: 'Off-White', category: 'Tenisky' } },
+  { query: 'Balenciaga Track', filters: { brand: 'Balenciaga', category: 'Tenisky' } },
+  { query: 'Rick Owens Geobasket', filters: { brand: 'Rick Owens', category: 'Tenisky' } },
+
+  // Oblečení
   { query: 'Supreme Box Logo Hoodie', filters: { brand: 'Supreme', category: 'Mikiny (Hoodies)' } },
   { query: 'Stüssy 8 Ball Hoodie', filters: { brand: 'Stüssy', category: 'Mikiny (Hoodies)' } },
   { query: 'Carhartt WIP Detroit Jacket', filters: { brand: 'Carhartt WIP', category: 'Bundy & Kabáty' } },
   { query: 'BAPE Shark Hoodie', filters: { brand: 'BAPE', category: 'Mikiny (Hoodies)' } },
-  { query: 'Balenciaga Track', filters: { brand: 'Balenciaga', category: 'Tenisky' } },
+  { query: 'Trapstar Irongate Jacket', filters: { brand: 'Trapstar', category: 'Bundy & Kabáty' } },
+  { query: 'Corteiz Alcatraz Cargos', filters: { brand: 'Corteiz', category: 'Kalhoty & Tepláky' } },
+  { query: 'Palm Angels track jacket', filters: { brand: 'Palm Angels', category: 'Bundy & Kabáty' } },
+  { query: 'Fear of God Essentials hoodie', filters: { brand: 'Fear of God (Essentials)', category: 'Mikiny (Hoodies)' } },
+
+  // Doplňky
   { query: 'Louis Vuitton belt', filters: { brand: 'Louis Vuitton', category: 'Pásky' } },
   { query: 'Chrome Hearts ring', filters: { brand: 'Chrome Hearts', category: 'Šperky' } },
   { query: 'Goyard tote bag', filters: { brand: 'Goyard', category: 'Tašky & Crossbody' } },
   { query: 'Telfar shopping bag', filters: { brand: 'Telfar', category: 'Tašky & Crossbody' } },
+  { query: 'Casio G-Shock', filters: { brand: 'Casio G-Shock', category: 'Doplňky' } },
+  { query: 'Gucci GG belt', filters: { brand: 'Gucci', category: 'Pásky' } },
+
+  // Art hračky a sběratelství
   { query: 'Kaws Companion figure', filters: { category: 'Art hračky' } },
   { query: 'Bearbrick 1000%', filters: { brand: 'Bearbrick (Medicom Toy)', category: 'Art hračky' } },
   { query: 'Pop Mart Labubu', filters: { brand: 'Pop Mart', category: 'Art hračky' } },
-  { query: 'Casio G-Shock', filters: { brand: 'Casio G-Shock', category: 'Doplňky' } },
-  // ... postupně doplň další podle skutečné poptávky ve vyhledávání appky.
+  { query: 'Pokémon TCG booster box', filters: { brand: 'Pokémon TCG', category: 'Sběratelské karty' } },
+  // ... postupně doplň/uprav podle skutečné poptávky ve vyhledávání appky.
 ];
 
 function isAuthorized(request) {
@@ -133,3 +162,4 @@ export async function GET(request) {
     results,
   });
 }
+
