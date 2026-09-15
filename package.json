@@ -13,7 +13,8 @@
     "next": "^15.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "@upstash/redis": "^1.34.0"
+    "@upstash/redis": "^1.34.0",
+    "@upstash/ratelimit": "^2.1.0"
   },
   "devDependencies": {
     "tailwindcss": "^3.4.0",
@@ -24,5 +25,6 @@
     "node": ">=18"
   }
 }
+
 
 
