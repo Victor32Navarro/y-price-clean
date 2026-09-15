@@ -81,7 +81,7 @@ function resolveApiKey(envValue, fallbackValue) {
 }
 
 // Kolik výsledků si necháme scrapnout markdownem z Firecrawlu na jeden dotaz.
-const SEARCH_RESULT_LIMIT = 8;
+const SEARCH_RESULT_LIMIT = 4;
 
 // ---------------------------------------------------------------------------
 // ODESÍLÁNÍ ODPOVĚDI — jediné místo, které smí psát do `res`
