@@ -1,0 +1,65 @@
+# Y-Price — Next.js App Router
+
+Kompletní přestavba na Next.js: cron pre-warm cache, duální vyhledávání
+(text / krokový filtr), size guide tabulky, rezervované reklamní pozice,
+tmavě-růžový styl zachovaný.
+
+## První rozjezd
+
+```bash
+npm install
+cp .env.example .env.local   # a vyplň hodnoty (viz níže)
+npm run dev                  # http://localhost:3000
+```
+
+## Proměnné prostředí
+
+| Proměnná | Odkud | K čemu |
+|---|---|---|
+| `GEMINI_API_KEY` | aistudio.google.com/apikey | AI extrakce nabídek |
+| `FIRECRAWL_API_KEY` | firecrawl.dev/app/api-keys | Vyhledávání a scraping webu |
+| `CRON_SECRET` | vymysli si náhodný řetězec | Ochrana `/api/cron` proti cizímu volání |
+| `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | Vercel Dashboard → Storage → Marketplace → Upstash | Cache pro živé i cronem předpočítané výsledky |
+
+Lokálně je vyplň do `.env.local`. Na Vercelu je nastav jako Environment
+Variables v projektu (přes CLI, pokud dashboard na mobilu zlobí —
+`npx vercel env add NÁZEV production`).
+
+## Struktura
+
+```
+app/
+  layout.js              — root layout, fonty, globální CSS
+  page.js                — hlavní stránka (drží stav hledání)
+  globals.css            — Tailwind + custom třídy (chip, color-pill, btn...)
+  api/
+    search/route.js      — živý endpoint, cache-aside přes Redis
+    cron/route.js         — denní pre-warm, DST-safe (viz komentář v souboru)
+components/
+  FilterPanel.jsx         — duální vyhledávání + krokový filtr + size guide
+  SearchResults.jsx       — loading/error/empty stavy + karty + in-feed reklama
+  AdSlot.jsx               — rezervovaná reklamní pozice (leaderboard/in-feed/sidebar)
+  SizeGuideTable.jsx       — tabulka velikostí (boty/oblečení)
+lib/
+  search.js                — sdílená Firecrawl→Gemini logika (cron i live)
+  cache.js                  — Upstash Redis cache-aside vrstva
+  formatPrice.js             — formátování Kč
+  data/
+    brands.js                — katalog značek (4 skupiny)
+    categories.js             — katalog kategorií + barvy
+    size-guides.js             — tabulky velikostí (boty/oblečení)
+```
+
+## Nasazení na Vercel
+
+1. Push do repozitáře, importuj projekt na vercel.com (nebo `vercel deploy`).
+2. Nastav Environment Variables (viz tabulka výše).
+3. Propoj Upstash Redis databázi (Storage → Marketplace).
+4. Vercel automaticky zaregistruje cron joby z `vercel.json` — zkontroluj
+   v Settings → Cron Jobs, že se objevily oba (2:00 a 3:00 UTC).
+
+## Co dál (viz doporučení z předchozí odpovědi)
+
+Fulltextové/fuzzy hledání napříč produkty → Meilisearch/Algolia/Typesense.
+Větší cron/fan-out → Upstash QStash. Reálná DB pro uživatele/wishlist →
+Neon/Supabase Postgres. Monitoring → Sentry + Vercel Analytics.
